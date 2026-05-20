@@ -19,6 +19,9 @@ export const pointPattern = defineFeature(function(context is Context, id is Id,
         annotation { "Name" : "Locations", "Filter" : EntityType.VERTEX || BodyType.MATE_CONNECTOR }
         definition.locations is Query;
 
+        annotation { "Name" : "Keep orientation" }
+        definition.keepOrientation is boolean;
+
         if (definition.patternType == PatternType.PART)
         {
             booleanPatternScopePredicate(definition);
@@ -78,7 +81,9 @@ export const pointPattern = defineFeature(function(context is Context, id is Id,
         for (var location in locations)
         {
             var instanceTransform;
-            if (originCSys != undefined && evaluateQuery(context, qBodyType(location, BodyType.MATE_CONNECTOR)) != [])
+            if (!definition.keepOrientation &&
+                originCSys != undefined &&
+                evaluateQuery(context, qBodyType(location, BodyType.MATE_CONNECTOR)) != [])
             {
                 const locactionCSys = evMateConnector(context, { "mateConnector" : location });
                 instanceTransform = toWorld(locactionCSys) * fromWorld(originCSys);
