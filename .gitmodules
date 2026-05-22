@@ -1,0 +1,3 @@
+[submodule "onshape-std-library-mirror"]
+	path = onshape-std-library-mirror
+	url = https://github.com/javawizard/onshape-std-library-mirror
