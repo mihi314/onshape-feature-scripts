@@ -44,7 +44,7 @@ export const pointPattern = defineFeature(function(context is Context, id is Id,
         // Compute the origin
         var origin;
         var originCSys = undefined;
-        if (evaluateQuery(context, definition.reference) == [])
+        if (evaluateQueryCount(context, definition.reference) == 0)
         {
             var boxEntities;
 
@@ -67,7 +67,7 @@ export const pointPattern = defineFeature(function(context is Context, id is Id,
         else
         {
             origin = evVertexPoint(context, { "vertex" : definition.reference });
-            if (evaluateQuery(context, qBodyType(definition.reference, BodyType.MATE_CONNECTOR)) != [])
+            if (evaluateQueryCount(context, qBodyType(definition.reference, BodyType.MATE_CONNECTOR)) != 0)
             {
                 originCSys = evMateConnector(context, { "mateConnector" : definition.reference });
             }
@@ -83,7 +83,7 @@ export const pointPattern = defineFeature(function(context is Context, id is Id,
             var instanceTransform;
             if (!definition.keepOrientation &&
                 originCSys != undefined &&
-                evaluateQuery(context, qBodyType(location, BodyType.MATE_CONNECTOR)) != [])
+                evaluateQueryCount(context, qBodyType(location, BodyType.MATE_CONNECTOR)) != 0)
             {
                 const locactionCSys = evMateConnector(context, { "mateConnector" : location });
                 instanceTransform = toWorld(locactionCSys) * fromWorld(originCSys);
