@@ -1,0 +1,21 @@
+version: '3'
+
+vars:
+  BUILD_DIR: build
+
+tasks:
+  update-docs:
+    desc: Download and convert Onshape standard library docs to markdown
+    vars:
+      URL: https://cad.onshape.com/FsDoc/library.html
+      HTML_FILE: "{{.BUILD_DIR}}/library.html"
+      MD_FILE: "stdlib-docs.md"
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - curl -L -o "{{.HTML_FILE}}" "{{.URL}}"
+      - pandoc "{{.HTML_FILE}}" -f html-native_divs-native_spans -o "{{.MD_FILE}}"
+
+  clean:
+    desc: Remove the build folder
+    cmds:
+      - rm -rf {{.BUILD_DIR}}
