@@ -90,15 +90,6 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
         const kPrime0 = flip1 ? -kPrimeRaw : kPrimeRaw;
         const normal0 = curvatureFrameNormal(curvatureResult);
 
-        const side1 = {
-                    "degree" : 3,
-                    "position" : p0,
-                    "tangent" : tangent0,
-                    "curvatureDirection" : normal0,
-                    "curvature" : curvatureResult.curvature,
-                    "normal" : normal0,
-                    "kPrime" : kPrime0
-                } as BridgingSideData;
 
         // ── Step 3: cylinder geometry ────────────────────────────────────────────────────────────
         const cylinderDef = evSurfaceDefinition(context, { "face" : definition.cylinderFace });
@@ -111,38 +102,39 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
         // XXX
         // ── Step 4: conservative profile depth from bounding box diagonal ────────────────────────
 
-        // ── Step 5: compute bridging curve endpoint p1 ──────────────────────────────────────────
-        // p1 follows the helix direction for taperLength arc, then sits profileDepth inside the
+        // ── Step 5: compute bridging curve endpoint p2 ──────────────────────────────────────────
+        // p2 follows the helix direction for taperLength arc, then sits profileDepth inside the
         // cylinder so the swept profile fully crosses the cylinder surface before the split.
         const p0_axialProjection = cylinderAxisOrigin + dot(p0 - cylinderAxisOrigin, cylinderAxisDir) * cylinderAxisDir;
         const p0_radial = p0 - p0_axialProjection;
         const p0_radialDir = p0_radial / norm(p0_radial);
         const p0_circularDir = cross(cylinderAxisDir, p0_radialDir);
 
+        const profileBox = evBox3d(context, {
+            "topology" : definition.profile,
+            "cSys" : coordSystem(p0, p0_radialDir, cylinderAxisDir),
+            "tight" : true
+        });
+        const profileDepth = profileBox.maxCorner[0];
+        const p1 = p0 + profileDepth * p0_radialDir;
+
         const axialAdvance = definition.taperLength * dot(tangent0, cylinderAxisDir);
         const circularAdvanceAngle = definition.taperLength * dot(tangent0, p0_circularDir) / norm(p0_radial) * radian;
-        const p1_radialDir = rotationMatrix3d(cylinderAxisDir, circularAdvanceAngle) * p0_radialDir;
+        const p2_radialDir = rotationMatrix3d(cylinderAxisDir, circularAdvanceAngle) * p0_radialDir;
+        const p2 = p0_axialProjection + axialAdvance * cylinderAxisDir + cylinderRadius * p2_radialDir;
 
-        const profileBox = evBox3d(context, {
-                    "topology" : definition.profile,
-                    "cSys" : coordSystem(p0, p0_radialDir, cylinderAxisDir),
-                    "tight" : true
-                });
-        const profileDepth = profileBox.maxCorner[0] - profileBox.minCorner[0];
-        //debug(context, profileBox);
-        //debug(context, profileDepth);
-
-
-
-        const p1 = p0_axialProjection + axialAdvance * cylinderAxisDir + (cylinderRadius - profileDepth) * p1_radialDir;
-
-
-        //debug(context, p1_radialDir);
-        //debug(context, p1);
-
+        const side1 = {
+                    "degree" : 3,
+                    "position" : p1,
+                    "tangent" : tangent0,
+                    "curvatureDirection" : normal0,
+                    "curvature" : curvatureResult.curvature,
+                    "normal" : normal0,
+                    "kPrime" : kPrime0
+                } as BridgingSideData;
         const side2 = {
                     "degree" : 0,
-                    "position" : p1
+                    "position" : p2
                 } as BridgingSideData;
 
         // ── Step 6: build bridging curve control points (G3 ↔ G0) ───────────────────────────────
@@ -171,8 +163,10 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
 
                 // opSplitPart does not create new bodies, but rather modify the existing one, so
                 // qCreatedBy(opId + "split", EntityType.BODY) would be empty
+                const qKeep = qCreatedBy(opId + "sweep", EntityType.BODY)->qClosestTo(p1);
+                const qDelete = qCreatedBy(opId + "sweep", EntityType.BODY)->qSubtraction(qKeep);
                 opDeleteBodies(context, opId + "deleteExcess", {
-                            "entities" : qClosestTo(qCreatedBy(opId + "sweep", EntityType.BODY), p1)
+                            "entities" : qDelete
                         });
                 opDeleteBodies(context, opId + "deleteCurve", {
                             "entities" : qCreatedBy(opId + "bridgingCurve", EntityType.BODY)
