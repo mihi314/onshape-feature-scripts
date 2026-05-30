@@ -49,6 +49,24 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
         annotation { "Name" : "Taper length" }
         isLength(definition.taperLength, NONNEGATIVE_LENGTH_BOUNDS);
 
+        annotation { "Name" : "Edit control points", "UIHint" : UIHint.REMEMBER_PREVIOUS_VALUE }
+        definition.editControlPoints is boolean;
+
+        if (definition.editControlPoints)
+        {
+            annotation { "Group Name" : "Edit control points", "Collapsed By Default" : false, "Driving Parameter" : "editControlPoints" }
+            {
+                annotation { "Name" : "Start magnitude" }
+                isReal(definition.side1Magnitude, POSITIVE_REAL_BOUNDS);
+
+                annotation { "Name" : "Start curvature offset" }
+                isReal(definition.side1CurvatureOffset, CLAMP_MAGNITUDE_REAL_BOUNDS);
+
+                annotation { "Name" : "Start flow offset" }
+                isReal(definition.side1G3Offset, CLAMP_MAGNITUDE_REAL_BOUNDS);
+            }
+        }
+
         booleanStepScopePredicate(definition);
     }
     {
@@ -139,7 +157,7 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
                     }).origin;
 
         // ── Step 7: build bridging curve control points (G3 ↔ G0) ───────────────────────────────
-        const side1 = {
+        var side1 = {
                     "degree" : 3,
                     "position" : p1,
                     "tangent" : p0_tangent,
@@ -148,6 +166,13 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
                     "normal" : p0_normal,
                     "kPrime" : p0_kPrime
                 } as BridgingSideData;
+        if (definition.editControlPoints)
+        {
+            side1.speedScale = definition.side1Magnitude;
+            side1.curvatureOffsetScale = definition.side1CurvatureOffset;
+            side1.g3OffsetScale = definition.side1G3Offset;
+        }
+
         const side2 = {
                     "degree" : 0,
                     "position" : p2
@@ -199,4 +224,10 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
 
         processNewBodyIfNeeded(context, id, definition, buildTaperBody);
     },
-    { operationType : NewBodyOperationType.NEW });
+    {
+        operationType : NewBodyOperationType.NEW,
+        editControlPoints : false,
+        side1Magnitude : 1,
+        side1CurvatureOffset : 1,
+        side1G3Offset : 1
+    });
