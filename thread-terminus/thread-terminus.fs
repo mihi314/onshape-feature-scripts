@@ -42,7 +42,7 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
         definition.helixVertex is Query;
 
         annotation { "Name" : "Cylinder face",
-                    "Filter" : EntityType.FACE && GeometryType.CYLINDER && ConstructionObject.NO,
+                    "Filter" : EntityType.FACE, //&& GeometryType.CYLINDER && ConstructionObject.NO,
                     "MaxNumberOfPicks" : 1 }
         definition.cylinderFace is Query;
 
@@ -61,7 +61,7 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
         const helixBodyEdges = qOwnedByBody(qEntityFilter(definition.helixPath, EntityType.BODY), EntityType.EDGE);
         const helixDirectEdge = qEntityFilter(definition.helixPath, EntityType.EDGE);
         const allHelixEdges = qUnion([helixBodyEdges, helixDirectEdge]);
-        const edgeAtVertex = qIntersection([
+        const p0_edge = qIntersection([
                     qAdjacent(definition.helixVertex, AdjacencyType.VERTEX, EntityType.EDGE),
                     allHelixEdges
                 ]);
@@ -69,75 +69,90 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
 
         // Determine whether the vertex is at parameter 0 or 1 on the edge
         const p0 = evVertexPoint(context, { "vertex" : definition.helixVertex });
-        const edgeLine0 = evEdgeTangentLine(context, { "edge" : edgeAtVertex, "parameter" : 0 });
-        const helixParam = tolerantEquals(edgeLine0.origin, p0) ? 0 : 1;
+        const p0_tangentLine = evEdgeTangentLine(context, { "edge" : p0_edge, "parameter" : 0 });
+        const p0_parameter = tolerantEquals(p0_tangentLine.origin, p0) ? 0 : 1;
         // If the vertex is at the edge start (param 0) the helix tangent points away from us,
         // so flip the tangent to continue past the endpoint in the correct direction.
-        const flip1 = (helixParam == 0);
+        const flip1 = (p0_parameter == 0);
 
         // ── Step 2: extract G3 curvature data at the helix endpoint ─────────────────────────────
         const curvatureResult = evEdgeCurvature(context, {
-                    "edge" : edgeAtVertex,
-                    "parameter" : helixParam,
+                    "edge" : p0_edge,
+                    "parameter" : p0_parameter,
                     "arcLengthParameterization" : false
                 });
         const kPrimeRaw = evEdgeCurvatureDerivative(context, {
-                    "edge" : edgeAtVertex,
-                    "parameter" : helixParam
+                    "edge" : p0_edge,
+                    "parameter" : p0_parameter
                 });
 
-        const tangent0 = flip1 ? -curvatureFrameTangent(curvatureResult) : curvatureFrameTangent(curvatureResult);
-        const kPrime0 = flip1 ? -kPrimeRaw : kPrimeRaw;
-        const normal0 = curvatureFrameNormal(curvatureResult);
+        const p0_tangent = flip1 ? -curvatureFrameTangent(curvatureResult) : curvatureFrameTangent(curvatureResult);
+        const p0_kPrime = flip1 ? -kPrimeRaw : kPrimeRaw;
+        const p0_normal = curvatureFrameNormal(curvatureResult);
 
 
-        // ── Step 3: cylinder geometry ────────────────────────────────────────────────────────────
-        const cylinderDef = evSurfaceDefinition(context, { "face" : definition.cylinderFace });
-        if (!(cylinderDef is Cylinder))
-            throw regenError("Selected face must be cylindrical.", ["cylinderFace"]);
-        const cylinderAxisDir = cylinderDef.coordSystem.zAxis;
-        const cylinderAxisOrigin = cylinderDef.coordSystem.origin;
-        const cylinderRadius = cylinderDef.radius;
+        // ── Step 3: surface normal at p0 ────────────────────────────────────────────────────────
+        const distResult = evDistance(context, { "side0" : p0, "side1" : definition.cylinderFace });
+        const q0 = distResult.sides[1].point;
+        const q0_surfaceNormal = evFaceTangentPlane(context, {
+                        "face" : definition.cylinderFace,
+                        "parameter" : distResult.sides[1].parameter
+                    }).normal;
 
-        // XXX
-        // ── Step 4: conservative profile depth from bounding box diagonal ────────────────────────
-
-        // ── Step 5: compute bridging curve endpoint p2 ──────────────────────────────────────────
-        // p2 follows the helix direction for taperLength arc, then sits profileDepth inside the
-        // cylinder so the swept profile fully crosses the cylinder surface before the split.
-        const p0_axialProjection = cylinderAxisOrigin + dot(p0 - cylinderAxisOrigin, cylinderAxisDir) * cylinderAxisDir;
-        const p0_radial = p0 - p0_axialProjection;
-        const p0_radialDir = p0_radial / norm(p0_radial);
-        const p0_circularDir = cross(cylinderAxisDir, p0_radialDir);
-
+        // ── Step 4: profile depth and p1 ────────────────────────────────────────────────────────
         const profileBox = evBox3d(context, {
-            "topology" : definition.profile,
-            "cSys" : coordSystem(p0, p0_radialDir, cylinderAxisDir),
-            "tight" : true
-        });
+                    "topology" : definition.profile,
+                    "cSys" : coordSystem(p0, q0_surfaceNormal, p0_tangent),
+                    "tight" : true
+                });
         const profileDepth = profileBox.maxCorner[0];
-        const p1 = p0 + profileDepth * p0_radialDir;
+        const p1 = p0 + profileDepth * q0_surfaceNormal;
 
-        const axialAdvance = definition.taperLength * dot(tangent0, cylinderAxisDir);
-        const circularAdvanceAngle = definition.taperLength * dot(tangent0, p0_circularDir) / norm(p0_radial) * radian;
-        const p2_radialDir = rotationMatrix3d(cylinderAxisDir, circularAdvanceAngle) * p0_radialDir;
-        const p2 = p0_axialProjection + axialAdvance * cylinderAxisDir + cylinderRadius * p2_radialDir;
+        // ── Step 5: intersection curve on surface ────────────────────────────────────────────────
+        // Section plane spanned by q0_surfaceNormal and p0_tangent.
+        opPlane(context, id + "sectionPlane", {
+                    "plane" : plane(q0, normalize(cross(p0_tangent, q0_surfaceNormal))),
+                });
+        opIntersectFaces(context, id + "surfaceCurve", {
+                    "tools" : qCreatedBy(id + "sectionPlane", EntityType.FACE),
+                    "targets" : definition.cylinderFace
+                });
+        const surfaceCurveEdge = qCreatedBy(id + "surfaceCurve", EntityType.EDGE);
+        // debug(context, surfaceCurveEdge);
 
+        // ── Step 6: find p2 at arc length taperLength along the surface curve ──────────────────────
+        const q0_parameter = evDistance(context, {
+                        "side0" : q0,
+                        "side1" : surfaceCurveEdge,
+                    }).sides[1].parameter;
+
+        const q0_tangent = evEdgeTangentLine(context, {
+                        "edge" : surfaceCurveEdge,
+                        "parameter" : q0_parameter,
+                    }).direction;
+
+        const sign = dot(q0_tangent, p0_tangent) > 0 ? 1 : -1;
+        const arcLength = evLength(context, { "entities" : surfaceCurveEdge });
+        const p2 = evEdgeTangentLine(context, {
+                        "edge" : surfaceCurveEdge,
+                        "parameter" : q0_parameter + sign * definition.taperLength / arcLength,
+                    }).origin;
+
+        // ── Step 7: build bridging curve control points (G3 ↔ G0) ───────────────────────────────
         const side1 = {
                     "degree" : 3,
                     "position" : p1,
-                    "tangent" : tangent0,
-                    "curvatureDirection" : normal0,
+                    "tangent" : p0_tangent,
+                    "curvatureDirection" : p0_normal,
                     "curvature" : curvatureResult.curvature,
-                    "normal" : normal0,
-                    "kPrime" : kPrime0
+                    "normal" : p0_normal,
+                    "kPrime" : p0_kPrime
                 } as BridgingSideData;
         const side2 = {
                     "degree" : 0,
                     "position" : p2
                 } as BridgingSideData;
 
-        // ── Step 6: build bridging curve control points (G3 ↔ G0) ───────────────────────────────
         const controlPoints = computeBridgingControlPoints(context, side1, side2);
         const bCurve = bSplineCurve({
                     "degree" : size(controlPoints) - 1,
@@ -145,7 +160,7 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
                     "controlPoints" : controlPoints
                 });
 
-        // ── Step 7: sweep the actual taper body and split excess ────────────────────────────────
+        // ── Step 8: sweep the actual taper body and split excess ────────────────────────────────
         const buildTaperBody = function(opId is Id)
             {
                 opCreateBSplineCurve(context, opId + "bridgingCurve", { "bSplineCurve" : bCurve });
@@ -158,18 +173,25 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
                 opSplitPart(context, opId + "split", {
                             "targets" : qBodyType(qCreatedBy(opId + "sweep", EntityType.BODY), BodyType.SOLID),
                             "tool" : definition.cylinderFace,
-                            "keepTools" : true
+                            "keepTools" : true,
+                            "useTrimmed": false
                         });
 
-                // opSplitPart does not create new bodies, but rather modify the existing one, so
-                // qCreatedBy(opId + "split", EntityType.BODY) would be empty
+                // opSplitPart does not create new bodies but modifies the existing one, so `qCreatedBy(opId + "split",
+                // EntityType.BODY)` would be empty.
+                // p1 is outside the surface so keep the body closest to it.
                 const qKeep = qCreatedBy(opId + "sweep", EntityType.BODY)->qClosestTo(p1);
-                const qDelete = qCreatedBy(opId + "sweep", EntityType.BODY)->qSubtraction(qKeep);
                 opDeleteBodies(context, opId + "deleteExcess", {
-                            "entities" : qDelete
+                            "entities" : qCreatedBy(opId + "sweep", EntityType.BODY)->qSubtraction(qKeep)
                         });
-                opDeleteBodies(context, opId + "deleteCurve", {
+                opDeleteBodies(context, opId + "deleteBridgingCurve", {
                             "entities" : qCreatedBy(opId + "bridgingCurve", EntityType.BODY)
+                        });
+                opDeleteBodies(context, opId + "deletePlane", {
+                            "entities" : qCreatedBy(id + "sectionPlane", EntityType.BODY)
+                        });
+                opDeleteBodies(context, opId + "deleteSurfaceCurve", {
+                            "entities" : qCreatedBy(id + "surfaceCurve", EntityType.BODY)
                         });
             };
 
