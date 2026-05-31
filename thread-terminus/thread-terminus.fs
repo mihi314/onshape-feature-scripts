@@ -137,33 +137,54 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
         const p1 = p0 + xAxis * profileBox.maxCorner[0];
         // debug(context, profileBox, coordSystem(p0, xAxis, profileNormal));
 
-        // Step 5: intersection curve on surface
+        // Steps 5–6: find p2 on the surface at arc distance taperLength from q0
         //
-        // Plane to intersect with spanned by surfaceData.normal and p0_tangent.
-        opPlane(context, id + "intersectionPlane", {
-                    "plane" : plane(surfaceData.q0, normalize(cross(p0_tangent, surfaceData.normal))),
-                });
-        opIntersectFaces(context, id + "surfaceCurve", {
-                    "tools" : qCreatedBy(id + "intersectionPlane", EntityType.FACE),
-                    "targets" : surfaceData.surfaceFaces
-                });
-        const surfaceCurveEdge = qCreatedBy(id + "surfaceCurve", EntityType.EDGE);
+        // Cylinder case: decompose into axial + circumferential components using exact helix geometry (more accurate).
+        // General case: intersect a section plane with the surface and walk the resulting curve.
+        const qSingleFace = qEntityFilter(definition.surface, EntityType.FACE);
+        const surfaceDef = evaluateQueryCount(context, qSingleFace) == 1 ?
+            evSurfaceDefinition(context, { "face" : qSingleFace }) : undefined;
+        var p2;
+        if (surfaceDef is Cylinder)
+        {
+            p2 = computeP2ForHelix(context, p0, p0_tangent, surfaceDef, definition.taperLength);
+        }
+        else
+        {
+            // Step 5: intersect a plane (spanned by surfaceData.normal and p0_tangent) with the surface
+            //
+            opPlane(context, id + "intersectionPlane", {
+                        "plane" : plane(surfaceData.q0, normalize(cross(p0_tangent, surfaceData.normal))),
+                    });
+            opIntersectFaces(context, id + "surfaceCurve", {
+                        "tools" : qCreatedBy(id + "intersectionPlane", EntityType.FACE),
+                        "targets" : surfaceData.surfaceFaces
+                    });
+            const qSurfaceCurveEdges = qCreatedBy(id + "surfaceCurve", EntityType.EDGE);
 
-        // Step 6: find p2 at arc length taperLength along the surface curve
-        //
-        const surfacePath = constructPath(context, surfaceCurveEdge);
-        const pathLength = evPathLength(context, surfacePath);
+            // Step 6: walk the surface curve to find p2 at arc distance taperLength from q0
+            //
+            const surfacePath = constructPath(context, qSurfaceCurveEdges);
+            const pathLength = evPathLength(context, surfacePath);
 
-        const q0_parameter = evDistancePath(context, {
-                        "side0" : surfaceData.q0,
-                        "side1" : surfacePath
-                    }).sides[1].parameter;
+            const q0_parameter = evDistancePath(context, {
+                            "side0" : surfaceData.q0,
+                            "side1" : surfacePath
+                        }).sides[1].parameter;
 
-        const q0_tangent = evPathTangentLines(context, surfacePath, [q0_parameter]).tangentLines[0].direction;
-        const sign = dot(q0_tangent, p0_tangent) > 0 ? 1 : -1;
-        const p2 = evPathTangentLines(context, surfacePath,
-                [q0_parameter + sign * definition.taperLength / pathLength]
-                ).tangentLines[0].origin;
+            const q0_tangent = evPathTangentLines(context, surfacePath, [q0_parameter]).tangentLines[0].direction;
+            const sign = dot(q0_tangent, p0_tangent) > 0 ? 1 : -1;
+            p2 = evPathTangentLines(context, surfacePath,
+                    [q0_parameter + sign * definition.taperLength / pathLength]
+                    ).tangentLines[0].origin;
+
+            opDeleteBodies(context, id + "deleteIntersectionPlane", {
+                        "entities" : qCreatedBy(id + "intersectionPlane", EntityType.BODY)
+                    });
+            opDeleteBodies(context, id + "deleteSurfaceCurve", {
+                        "entities" : qCreatedBy(id + "surfaceCurve", EntityType.BODY)
+                    });
+        }
 
         // Step 7: build bridging curve control points
         //
@@ -210,7 +231,7 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
                             "profiles" : definition.profile,
                             "path" : qCreatedBy(opId + "bridgingCurve", EntityType.EDGE)
                         });
-                debug(context, qCreatedBy(opId + "bridgingCurve", EntityType.EDGE));
+                // debug(context, qCreatedBy(opId + "bridgingCurve", EntityType.EDGE));
 
                 opSplitPart(context, opId + "split", {
                             "targets" : qBodyType(qCreatedBy(opId + "sweep", EntityType.BODY), BodyType.SOLID),
@@ -230,12 +251,7 @@ export const threadTerminus = defineFeature(function(context is Context, id is I
                 opDeleteBodies(context, opId + "deleteBridgingCurve", {
                             "entities" : qCreatedBy(opId + "bridgingCurve", EntityType.BODY)
                         });
-                opDeleteBodies(context, opId + "deleteIntersectionPlane", {
-                            "entities" : qCreatedBy(id + "intersectionPlane", EntityType.BODY)
-                        });
-                opDeleteBodies(context, opId + "deleteSurfaceCurve", {
-                            "entities" : qCreatedBy(id + "surfaceCurve", EntityType.BODY)
-                        });
+
                 const tmpSurfacePlane = qCreatedBy(id + "surfacePlane", EntityType.BODY);
                 if (!isQueryEmpty(context, tmpSurfacePlane))
                     opDeleteBodies(context, opId + "deleteSurfacePlane", { "entities" : tmpSurfacePlane });
@@ -303,6 +319,33 @@ function resolveSurface(context is Context, id is Id, qSurface is Query, p0 is V
             "normal" : normal,
             "surfaceFaces" : qAllFaces,
         };
+}
+
+/**
+ * Computes p2 (the G0 bridging curve endpoint) for the cylinder/helix case by decomposing
+ * `taperLength` into axial and circumferential components using exact cylinder geometry.
+ */
+function computeP2ForHelix(
+    context is Context,
+    p0 is Vector,
+    p0_tangent is Vector,
+    cylinderDef is map,
+    taperLength is ValueWithUnits
+) returns Vector
+{
+    const cylinderAxisDir = cylinderDef.coordSystem.zAxis;
+    const cylinderAxisOrigin = cylinderDef.coordSystem.origin;
+    const cylinderRadius = cylinderDef.radius;
+
+    const p0_axialProjection = cylinderAxisOrigin + dot(p0 - cylinderAxisOrigin, cylinderAxisDir) * cylinderAxisDir;
+    const p0_radial = p0 - p0_axialProjection;
+    const p0_radialDir = p0_radial / norm(p0_radial);
+    const p0_circularDir = cross(cylinderAxisDir, p0_radialDir);
+
+    const axialAdvance = taperLength * dot(p0_tangent, cylinderAxisDir);
+    const circularAdvanceAngle = taperLength * dot(p0_tangent, p0_circularDir) / norm(p0_radial) * radian;
+    const p2_radialDir = rotationMatrix3d(cylinderAxisDir, circularAdvanceAngle) * p0_radialDir;
+    return p0_axialProjection + axialAdvance * cylinderAxisDir + cylinderRadius * p2_radialDir;
 }
 
 /**
