@@ -276,49 +276,65 @@ function computeBridgingSideData(context is Context, id is Id, definition is map
     const T = p0_tangent;
     const N = p0_curveNormal;
     const B = cross(p0_tangent, p0_curveNormal);
+    const kappa = curvatureResult.curvature;
 
-    const kappa = curvatureResult.curvature; // curvature
-    const tau = dot(p0_kPrime, B) / kappa; // torison
-    const omega = tau * T + kappa * B; // Darboux vector
+    var side1;
+    if (kappa > TOLERANCE.zeroLength / meter)
+    {
+        const tau = dot(p0_kPrime, B) / kappa; // torison
+        const omega = tau * T + kappa * B; // Darboux vector
 
-    const frame = coordSystem(p0, N, T);
-    const p1InFrame = fromWorld(frame, p1);
+        const frame = coordSystem(p0, N, T);
+        const p1InFrame = fromWorld(frame, p1);
 
-    const framePrime = matrixWithUnitsFromColumns([-kappa * T + tau * B, -tau * N, kappa * N]);
+        const framePrime = matrixWithUnitsFromColumns([-kappa * T + tau * B, -tau * N, kappa * N]);
 
-    const kappaPrime = dot(p0_kPrime, N);
-    // Involves the fourth derivative of the curve which we don't easily have access to and assume to be 0
-    const tauPrime = 0 / meter ^ 2;
-    const omegaPrime = tauPrime * T + kappaPrime * B;
+        const kappaPrime = dot(p0_kPrime, N);
+        // Involves the fourth derivative of the curve which we don't easily have access to and assume to be 0
+        const tauPrime = 0 / meter ^ 2;
+        const omegaPrime = tauPrime * T + kappaPrime * B;
 
-    const framePrimePrime = matrixWithUnitsFromColumns([
-                -kappaPrime * T - (kappa ^ 2 + tau ^ 2) * N + tauPrime * B,
-                kappa * tau * T - tauPrime * N - tau ^ 2 * B,
-                p0_kPrime
-            ]);
+        const framePrimePrime = matrixWithUnitsFromColumns([
+                    -kappaPrime * T - (kappa ^ 2 + tau ^ 2) * N + tauPrime * B,
+                    kappa * tau * T - tauPrime * N - tau ^ 2 * B,
+                    p0_kPrime
+                ]);
 
-    const p1Prime = T + framePrime * p1InFrame;
-    const p1PrimePrime = kappa * N + framePrimePrime * p1InFrame;
-    const T1 = normalize(p1Prime);
-    const B1 = normalize(cross(p1Prime, p1PrimePrime));
-    const N1 = cross(B1, T1);
-    const kappa1 = norm(cross(p1Prime, p1PrimePrime)) / norm(p1Prime) ^ 3;
+        const p1Prime = T + framePrime * p1InFrame;
+        const p1PrimePrime = kappa * N + framePrimePrime * p1InFrame;
+        const T1 = normalize(p1Prime);
+        const B1 = normalize(cross(p1Prime, p1PrimePrime));
+        const N1 = cross(B1, T1);
+        const kappa1 = norm(cross(p1Prime, p1PrimePrime)) / norm(p1Prime) ^ 3;
 
-    const p1PrimePrime_alternate = kappa * N + cross(omegaPrime, p1 - p0) + cross(omega, cross(omega, p1 - p0));
-    const T1_alternate = normalize(T + cross(omega, p1 - p0));
+        const p1PrimePrime_alternate = kappa * N + cross(omegaPrime, p1 - p0) + cross(omega, cross(omega, p1 - p0));
+        const T1_alternate = normalize(T + cross(omega, p1 - p0));
 
-    // debug(context, { "frame" : coordSystem(p0, N, T), "curvature" : kappa } as EdgeCurvatureResult, DebugColor.GREEN);
-    // debug(context, { "frame" : coordSystem(p1, N1, T1), "curvature" : kappa1 } as EdgeCurvatureResult, DebugColor.CYAN);
+        // debug(context, { "frame" : coordSystem(p0, N, T), "curvature" : kappa } as EdgeCurvatureResult, DebugColor.GREEN);
+        // debug(context, { "frame" : coordSystem(p1, N1, T1), "curvature" : kappa1 } as EdgeCurvatureResult, DebugColor.CYAN);
 
-    var side1 = {
-            "degree" : degree,
-            "position" : p1,
-            "tangent" : T1,
-            "curvatureDirection" : N1,
-            "curvature" : kappa1,
-            "normal" : N1,
-            "kPrime" : p0_kPrime // TODO: this still needs a correction
-        } as BridgingSideData;
+        side1 = {
+                    "degree" : degree,
+                    "position" : p1,
+                    "tangent" : T1,
+                    "curvatureDirection" : N1,
+                    "curvature" : kappa1,
+                    "normal" : N1,
+                    "kPrime" : p0_kPrime // TODO: this still needs a correction
+                } as BridgingSideData;
+    }
+    else
+    {
+        side1 = {
+                    "degree" : degree,
+                    "position" : p1,
+                    "tangent" : T,
+                    "curvatureDirection" : N,
+                    "curvature" : kappa,
+                    "normal" : N,
+                    "kPrime" : p0_kPrime
+                } as BridgingSideData;
+    }
 
     const side2 = {
                 "degree" : 0,
