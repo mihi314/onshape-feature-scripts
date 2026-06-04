@@ -24,10 +24,10 @@ import(path : "690372703e51729b485491c6", version : "2b8eadb20af1fc912fefaeab");
  * thread run-out. Non-cyliner surfaces are also supported.
  */
 annotation {
-        "Feature Type Name" : "Thread Terminus",
-        "Manipulator Change Function" : "sweepTaperManipulator"
+        "Feature Type Name" : "Sweep Runout",
+        "Manipulator Change Function" : "sweepRunoutManipulator"
     }
-export const threadTerminus = defineFeature(function(context is Context, id is Id, definition is map)
+export const sweepRunout = defineFeature(function(context is Context, id is Id, definition is map)
     precondition
     {
         booleanStepTypePredicate(definition);
@@ -415,9 +415,9 @@ const MANIPULATOR_CURVATURE_OFFSET = "manipulatorCurvatureOffsetScale";
 const MANIPULATOR_G3_OFFSET = "manipulatorG3OffsetScale";
 
 /** @internal */
-export function sweepTaperManipulator(context is Context, definition is map, newManipulators is map) returns map
+export function sweepRunoutManipulator(context is Context, definition is map, newManipulators is map) returns map
 {
-    var sideData = computeBridgingSideData(context, ["sweepTaperManipulator"] as Id, definition);
+    var sideData = computeBridgingSideData(context, ["sweepRunoutManipulator"] as Id, definition);
 
     // Use unscaled control points for magnitude/G3 formulas.
     // Pre-apply speedScale only for the curvature case (mirrors bridgingCurveManipulator).
