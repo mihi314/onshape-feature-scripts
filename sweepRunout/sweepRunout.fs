@@ -273,8 +273,6 @@ function computeBridgingSideData(context is Context, id is Id, definition is map
                 BridgingCurveMatchType.CURVATURE : 2,
                 BridgingCurveMatchType.G3 : 3 };
 
-
-
     const T = p0_tangent;
     const N = p0_curveNormal;
     const B = cross(p0_tangent, p0_curveNormal);
@@ -286,21 +284,18 @@ function computeBridgingSideData(context is Context, id is Id, definition is map
     const frame = coordSystem(p0, N, T);
     const p1InFrame = fromWorld(frame, p1);
 
-    // TODO: create matrixFromColumns helper function
-    const framePrimeEntries = [-kappa * T + tau * B, -tau * N, kappa * N];
-    const framePrime = transpose(matrix(stripUnits(framePrimeEntries))) * getUnitOfValue(framePrimeEntries[0][0]);
+    const framePrime = matrixWithUnitsFromColumns([-kappa * T + tau * B, -tau * N, kappa * N]);
 
     const kappaPrime = dot(p0_kPrime, N);
-    // Involves the fouth derivative of the curve which we don't easily have and assume to be 0
+    // Involves the fourth derivative of the curve which we don't easily have access to and assume to be 0
     const tauPrime = 0 / meter ^ 2;
     const omegaPrime = tauPrime * T + kappaPrime * B;
 
-    const framePrimePrimeEntries = [
-            -kappaPrime * T - (kappa ^ 2 + tau ^ 2) * N + tauPrime * B,
-            kappa * tau * T - tauPrime * N - tau ^ 2 * B,
-            p0_kPrime
-        ];
-    const framePrimePrime = transpose(matrix(stripUnits(framePrimePrimeEntries))) * getUnitOfValue(framePrimePrimeEntries[0][0]);
+    const framePrimePrime = matrixWithUnitsFromColumns([
+                -kappaPrime * T - (kappa ^ 2 + tau ^ 2) * N + tauPrime * B,
+                kappa * tau * T - tauPrime * N - tau ^ 2 * B,
+                p0_kPrime
+            ]);
 
     const p1Prime = T + framePrime * p1InFrame;
     const p1PrimePrime = kappa * N + framePrimePrime * p1InFrame;
@@ -541,4 +536,19 @@ function showControlPoints(context is Context, id is Id, controlPoints is array)
         addDebugEntities(context, qUnion([vertices, edges]), DebugColor.MAGENTA);
     }
     abortFeature(context, controlId);
+}
+
+function matrixWithUnitsFromColumns(columns is array) returns MatrixWithUnits
+precondition
+{
+    size(columns) > 0;
+    for (var col in columns)
+    {
+        col is Vector;
+        col[0] is ValueWithUnits;
+        col[0].unit == columns[0][0].unit;
+    }
+}
+{
+    return transpose(matrix(stripUnits(columns))) * getUnitOfValue(columns[0][0]);
 }
