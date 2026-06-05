@@ -17,17 +17,16 @@ import(path : "onshape/std/manipulator.fs", version : "2960.0");
 import(path : "32e5418754a29436e5e98979", version : "8ed2ff7e1c2288dcae116756");
 import(path : "690372703e51729b485491c6", version : "2b8eadb20af1fc912fefaeab");
 
-
 /**
  * Sweeps a thread profile along a bridging curve that transitions from a helix endpoint
  * to a point inside the cylinder, then trims at the cylinder surface — creating a smooth
- * thread run-out. Non-cyliner surfaces are also supported.
+ * thread runout. Non-cyliner surfaces are also supported.
  */
 annotation {
-        "Feature Type Name" : "Sweep Runout",
-        "Manipulator Change Function" : "sweepRunoutManipulator"
+        "Feature Type Name" : "Sweep To Surface",
+        "Manipulator Change Function" : "sweepToSurfaceManipulator"
     }
-export const sweepRunout = defineFeature(function(context is Context, id is Id, definition is map)
+export const sweepToSurface = defineFeature(function(context is Context, id is Id, definition is map)
     precondition
     {
         booleanStepTypePredicate(definition);
@@ -54,27 +53,27 @@ export const sweepRunout = defineFeature(function(context is Context, id is Id, 
         annotation { "Name" : "Taper length" }
         isLength(definition.taperLength, NONNEGATIVE_LENGTH_BOUNDS);
 
-        annotation { "Name" : "Match", "UIHint" : UIHint.REMEMBER_PREVIOUS_VALUE }
+        annotation { "Name" : "Match", "Default" : BridgingCurveMatchType.CURVATURE, "UIHint" : UIHint.REMEMBER_PREVIOUS_VALUE }
         definition.match1 is BridgingCurveMatchType;
 
-        annotation { "Name" : "Edit control points", "UIHint" : UIHint.REMEMBER_PREVIOUS_VALUE }
+        annotation { "Name" : "Edit control points", "Default" : false, "UIHint" : UIHint.REMEMBER_PREVIOUS_VALUE }
         definition.editControlPoints is boolean;
 
         if (definition.editControlPoints)
         {
             annotation { "Group Name" : "Edit control points", "Collapsed By Default" : false, "Driving Parameter" : "editControlPoints" }
             {
-                annotation { "Name" : "Start magnitude" }
+                annotation { "Name" : "Start magnitude", "Default" : 1 }
                 isReal(definition.side1SpeedScale, POSITIVE_REAL_BOUNDS);
 
                 if (definition.match1 == BridgingCurveMatchType.CURVATURE || definition.match1 == BridgingCurveMatchType.G3)
                 {
-                    annotation { "Name" : "Start curvature offset" }
+                    annotation { "Name" : "Start curvature offset", "Default" : 1 }
                     isReal(definition.side1CurvatureOffsetScale, CLAMP_MAGNITUDE_REAL_BOUNDS);
                 }
                 if (definition.match1 == BridgingCurveMatchType.G3)
                 {
-                    annotation { "Name" : "Start flow offset" }
+                    annotation { "Name" : "Start flow offset", "Default" : 1 }
                     isReal(definition.side1G3OffsetScale, CLAMP_MAGNITUDE_REAL_BOUNDS);
                 }
             }
@@ -426,9 +425,9 @@ const MANIPULATOR_CURVATURE_OFFSET = "manipulatorCurvatureOffsetScale";
 const MANIPULATOR_G3_OFFSET = "manipulatorG3OffsetScale";
 
 /** @internal */
-export function sweepRunoutManipulator(context is Context, definition is map, newManipulators is map) returns map
+export function sweepToSurfaceManipulator(context is Context, definition is map, newManipulators is map) returns map
 {
-    var sideData = computeBridgingSideData(context, ["sweepRunoutManipulator"] as Id, definition);
+    var sideData = computeBridgingSideData(context, ["sweepToSurfaceManipulator"] as Id, definition);
 
     // Use unscaled control points for magnitude/G3 formulas.
     // Pre-apply speedScale only for the curvature case (mirrors bridgingCurveManipulator).
